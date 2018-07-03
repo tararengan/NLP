@@ -6,6 +6,7 @@ Read sample text,run an RNN and generate text
 #imports
 import numpy as np
 import argparse
+import copy as cp
 
 
 def read_file_return_text(_input_file):
@@ -28,9 +29,9 @@ def initialize(_vocab_size, _hidden_layer_size):
     :return:
     """
 
-    W_xh = np.zeros(_hidden_layer_size, _vocab_size)
-    W_hh = np.zeros(_hidden_layer_size, _hidden_layer_size)
-    W_hy = np.zeros(_vocab_size, _hidden_layer_size)
+    W_xh = np.zeros((_hidden_layer_size, _vocab_size))
+    W_hh = np.zeros((_hidden_layer_size, _hidden_layer_size))
+    W_hy = np.zeros((_vocab_size, _hidden_layer_size))
 
     b = np.zeros(_hidden_layer_size,)
     b_prime = np.zeros(_vocab_size,)
@@ -40,9 +41,21 @@ def initialize(_vocab_size, _hidden_layer_size):
 
 def forward_pass(_input, _hidden, _W_xh, _W_hh, _W_hy, _b, _b_prime):
 
+    """
 
-    hidden = np.tanh(np.mm(_W_xh, _input) + np.mm(_W_hh, _hidden) + _b)
-    y = np.mm(_W_hy, hidden) + _b_prime
+    :param _input:
+    :param _hidden:
+    :param _W_xh:
+    :param _W_hh:
+    :param _W_hy:
+    :param _b:
+    :param _b_prime:
+    :return:
+    """
+
+
+    hidden = np.tanh(np.matmul(_W_xh, _input) + np.matmul(_W_hh, _hidden) + _b)
+    y = np.matmul(_W_hy, hidden) + _b_prime
     probs = np.exp(y)/np.sum(np.exp(y))
 
     return hidden, y, probs
@@ -59,15 +72,13 @@ def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
     :return:
     """
 
-    print("Check")
-
     input_text, chars = read_file_return_text(_input_file)
     vocab_size = len(chars)
 
-    char_index_dict = {char:i for i, char in enumerate(chars)}
-    index_char_dict = {v:k for k, v in char_index_dict.items()}
+    char_index_dict = {char: i for i, char in enumerate(chars)}
+    index_char_dict = {v: k for k, v in char_index_dict.items()}
 
-    W_xh, W_hh, W_hy, b, b_prime = initialize(vocab_size, _hidden_layer_size, _batch_size)
+    W_xh, W_hh, W_hy, b, b_prime = initialize(vocab_size, _hidden_layer_size)
 
     cont = True
     hidden_prev = np.zeros(_hidden_layer_size,)
@@ -102,37 +113,37 @@ def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
             x[index] = 1
 
             #forward pass
-            hidden, y, probs = forward_pass(input_chars, hidden_prev, W_xh, W_hh, W_hy, b, b_prime)
+            hidden, y, probs = forward_pass(x, hidden_prev, W_xh, W_hh, W_hy, b, b_prime)
 
             #gradients - back prop
-            dy = probs
+            dy = cp.deepcopy(probs)
             dy[target_index] += -1
 
-            dW_hy = np.mm(dy, hidden.T)
+            dW_hy = np.matmul(dy[:, np.newaxis], hidden[:, np.newaxis].T)
             db_prime = dy
 
-            dh = np.mm(W_hy.T, dy)
+            dh = np.matmul(W_hy.T, dy)
 
             d_h_hraw = 1-np.square(hidden)
 
-            dh_raw = np.dot(dh, d_h_hraw)
+            dh_raw = np.multiply(dh, d_h_hraw)
 
             #tier1
-            dW_xh += np.mm(dh_raw, x.T)
-            dW_hh += np.mm(dh_raw, hidden_prev.T)
+            dW_xh += np.matmul(dh_raw[:, np.newaxis], x[:, np.newaxis].T)
+            dW_hh += np.matmul(dh_raw, hidden_prev.T)
             db += dh_raw
 
-            dh_prev = np.mm(W_hh.T, dh_raw)
+            dh_prev = np.matmul(W_hh.T, dh_raw)
 
             #tier2
-            dW_xh += np.mm(np.diag(dh_prev), d_hprev_Wxh)
-            dW_hh += np.mm(np.diag(dh_prev), d_hprev_Whh)
-            db += np.mm(np.diag(dh_prev), d_hprev_b)
+            dW_xh += np.matmul(np.diag(dh_prev), d_hprev_Wxh)
+            dW_hh += np.matmul(np.diag(dh_prev), d_hprev_Whh)
+            db += np.matmul(np.diag(dh_prev), d_hprev_b)
 
 
             #save for next iter
-            d_hprev_Wxh = np.mm(d_h_hraw, x.T)
-            d_hprev_Whh = np.mm(d_h_hraw, hidden_prev.T)
+            d_hprev_Wxh = np.matmul(d_h_hraw[:, np.newaxis], x[:, np.newaxis].T)
+            d_hprev_Whh = np.matmul(d_h_hraw[:, np.newaxis], hidden_prev[:, np.newaxis].T)
             d_hprev_b = d_h_hraw
 
             #update loss
@@ -146,15 +157,15 @@ def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
             param += -_learning_rate * dparam / np.sqrt(mem + 1e-8)  # adagrad update
 
         #print loss for batch
-        print('Loss: %d'%loss)
+        print('Loss: {0}'.format(loss))
 
         #see if next batch exists
         start_index = start_index + _batch_size
         end_index = end_index + _batch_size
         if start_index >= len(input_text):
             cont = False
-        elif end_index > len(input_text):
-            end_index = len(input_text)
+        elif end_index >= len(input_text):
+            end_index = len(input_text)-1
 
     return W_xh, W_hh, W_hy, b, b_prime
 
@@ -165,10 +176,10 @@ def parse_arguments():
     """
 
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('-f', type=str, dest='input_file')
-    arg_parser.add_argument('-b', type=int, dest='batch_size')
-    arg_parser.add_argument('-h', type=int, dest='hidden_layer_size')
-    arg_parser.add_argument('-lr', type=int, dest='learning_rate')
+    arg_parser.add_argument('--f', type=str, dest='input_file')
+    arg_parser.add_argument('--b', type=int, dest='batch_size')
+    arg_parser.add_argument('--h', type=int, dest='hidden_layer_size')
+    arg_parser.add_argument('--lr', type=float, dest='learning_rate')
 
     return arg_parser.parse_args()
 
@@ -177,7 +188,6 @@ if __name__ == "__main__":
 
     #parse arguments
     arguments = parse_arguments()
-    print("Check 0")
     W_xh, W_hh, W_hy, b, b_prime = \
         main(arguments.input_file, arguments.batch_size, arguments.hidden_layer_size, arguments.learning_rate)
 
