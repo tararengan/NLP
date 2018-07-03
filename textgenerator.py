@@ -61,7 +61,35 @@ def forward_pass(_input, _hidden, _W_xh, _W_hh, _W_hy, _b, _b_prime):
     return hidden, y, probs
 
 
-def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
+def sample_from_model(_vocab_size, _index_char_dict, _text_size, **kwargs):
+
+
+    first_char_index  = np.random.randint(0, _vocab_size)
+    x = np.zeros(_vocab_size)
+    x[first_char_index] = 1
+    gen_text = ''
+
+    hidden = kwargs['hidden']
+    W_xh = kwargs['W_xh']
+    W_hh = kwargs['W_hh']
+    W_hy = kwargs['W_hy']
+    b = kwargs['b']
+    b_prime = kwargs['b_prime']
+
+    for i in range(_text_size):
+        hidden, y, probs = forward_pass(x, hidden, W_xh, W_hh,
+                             W_hy, b, b_prime)
+        #get random char from probs
+        gen_char_index = np.random.choice(_vocab_size, p = probs)
+        gen_char = _index_char_dict[gen_char_index]
+
+        gen_text = ''.join([gen_text, gen_char])
+
+
+    return gen_text
+
+
+def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer_size, _learning_rate):
 
     """
 
@@ -72,13 +100,9 @@ def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
     :return:
     """
 
-    input_text, chars = read_file_return_text(_input_file)
-    vocab_size = len(chars)
 
-    char_index_dict = {char: i for i, char in enumerate(chars)}
-    index_char_dict = {v: k for k, v in char_index_dict.items()}
 
-    W_xh, W_hh, W_hy, b, b_prime = initialize(vocab_size, _hidden_layer_size)
+    W_xh, W_hh, W_hy, b, b_prime = initialize(_vocab_size, _hidden_layer_size)
 
     cont = True
     hidden_prev = np.zeros(_hidden_layer_size,)
@@ -100,16 +124,16 @@ def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
     while cont:
 
         #next batch
-        input_chars = input_text[start_index: end_index]
-        target_chars = input_text[start_index+1:end_index+1]
+        input_chars = _input_text[start_index: end_index]
+        target_chars = _input_text[start_index+1:end_index+1]
         loss = 0
 
         for i in range(len(input_chars)):
             char = input_chars[i]
             target_char = target_chars[i]
-            x = np.zeros(vocab_size,)
-            index = char_index_dict[char]
-            target_index = char_index_dict[target_char]
+            x = np.zeros(_vocab_size,)
+            index = _char_index_dict[char]
+            target_index = _char_index_dict[target_char]
             x[index] = 1
 
             #forward pass
@@ -162,12 +186,32 @@ def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
         #see if next batch exists
         start_index = start_index + _batch_size
         end_index = end_index + _batch_size
-        if start_index >= len(input_text):
+        if start_index >= len(_input_text):
             cont = False
-        elif end_index >= len(input_text):
-            end_index = len(input_text)-1
+        elif end_index >= len(_input_text):
+            end_index = len(_input_text)-1
 
     return W_xh, W_hh, W_hy, b, b_prime
+
+
+def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
+
+    input_text, chars = read_file_return_text(_input_file)
+    vocab_size = len(chars)
+
+    char_index_dict = {char: i for i, char in enumerate(chars)}
+    index_char_dict = {v: k for k, v in char_index_dict.items()}
+
+    W_xh, W_hh, W_hy, b, b_prime = train(input_text, char_index_dict, vocab_size, _batch_size,
+                                         _hidden_layer_size, _learning_rate)
+
+    args = {'W_xh': W_xh, 'W_hh': W_hh, 'W_hy': W_hy, 'b': b, 'b_prime': b_prime, 'hidden': np.zeros(_hidden_layer_size,)}
+
+    sample_text = sample_from_model(vocab_size, index_char_dict, 200, **args)
+
+    print(sample_text)
+
+    pass
 
 
 def parse_arguments():
@@ -188,8 +232,7 @@ if __name__ == "__main__":
 
     #parse arguments
     arguments = parse_arguments()
-    W_xh, W_hh, W_hy, b, b_prime = \
-        main(arguments.input_file, arguments.batch_size, arguments.hidden_layer_size, arguments.learning_rate)
+    main(arguments.input_file, arguments.batch_size, arguments.hidden_layer_size, arguments.learning_rate)
 
 
 
