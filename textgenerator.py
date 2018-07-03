@@ -48,8 +48,18 @@ def forward_pass(_input, _hidden, _W_xh, _W_hh, _W_hy, _b, _b_prime):
     return hidden, y, probs
 
 
-
 def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
+
+    """
+
+    :param _input_file:
+    :param _batch_size:
+    :param _hidden_layer_size:
+    :param _learning_rate:
+    :return:
+    """
+
+    print("Check")
 
     input_text, chars = read_file_return_text(_input_file)
     vocab_size = len(chars)
@@ -149,33 +159,27 @@ def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
     return W_xh, W_hh, W_hy, b, b_prime
 
 
-
-
-
-
-
-
-
-
 def parse_arguments():
     """
     :return: parsed arguments
     """
 
-    arg_parser = argparse.Argument_Parser()
-    arg_parser.add_argument('--f', type=str, dest='input_file')
-    arg_parser.add_argument('--b', type=int, dest='batch_size')
-    arg_parser.add_argument('--h', type=int, dest='hidden_layer_size')
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('-f', type=str, dest='input_file')
+    arg_parser.add_argument('-b', type=int, dest='batch_size')
+    arg_parser.add_argument('-h', type=int, dest='hidden_layer_size')
     arg_parser.add_argument('-lr', type=int, dest='learning_rate')
 
     return arg_parser.parse_args()
 
 
-if __name__ == 'main':
+if __name__ == "__main__":
 
     #parse arguments
     arguments = parse_arguments()
-    main(arguments.input_file, arguments.batch_size, arguments.hidden_layer_size, arguments.learning_rate)
+    print("Check 0")
+    W_xh, W_hh, W_hy, b, b_prime = \
+        main(arguments.input_file, arguments.batch_size, arguments.hidden_layer_size, arguments.learning_rate)
 
 
 
