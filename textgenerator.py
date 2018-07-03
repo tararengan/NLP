@@ -28,13 +28,13 @@ def initialize(_vocab_size, _hidden_layer_size):
     :param _hidden_layer_size:
     :return:
     """
+    scale_factor = .0000001
+    W_xh = scale_factor*np.ones((_hidden_layer_size, _vocab_size))
+    W_hh = scale_factor*np.ones((_hidden_layer_size, _hidden_layer_size))
+    W_hy = scale_factor*np.ones((_vocab_size, _hidden_layer_size))
 
-    W_xh = np.zeros((_hidden_layer_size, _vocab_size))
-    W_hh = np.zeros((_hidden_layer_size, _hidden_layer_size))
-    W_hy = np.zeros((_vocab_size, _hidden_layer_size))
-
-    b = np.zeros(_hidden_layer_size,)
-    b_prime = np.zeros(_vocab_size,)
+    b = np.ones(_hidden_layer_size,)
+    b_prime = np.ones(_vocab_size,)
 
     return W_xh, W_hh, W_hy, b, b_prime
 
@@ -52,7 +52,6 @@ def forward_pass(_input, _hidden, _W_xh, _W_hh, _W_hy, _b, _b_prime):
     :param _b_prime:
     :return:
     """
-
 
     hidden = np.tanh(np.matmul(_W_xh, _input) + np.matmul(_W_hh, _hidden) + _b)
     y = np.matmul(_W_hy, hidden) + _b_prime
@@ -100,96 +99,115 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
     :return:
     """
 
-
-
     W_xh, W_hh, W_hy, b, b_prime = initialize(_vocab_size, _hidden_layer_size)
 
-    cont = True
-    hidden_prev = np.zeros(_hidden_layer_size,)
-    start_index = 0
-    end_index = start_index+_batch_size
-    d_hprev_Wxh = np.zeros(W_xh.shape)
-    d_hprev_Whh = np.zeros(W_hh.shape)
-    d_hprev_b = np.zeros(b.shape)
+    epochs = 10
+    for j in range(epochs):
 
-    dW_xh = np.zeros(W_xh.shape)
-    dW_hh = np.zeros(W_hh.shape)
-    dW_hy = np.zeros(W_hy.shape)
-    db = np.zeros(b.shape)
-    db_prime = np.zeros(b_prime.shape)
+        cont = True
+        start_index = 0
+        end_index = start_index+_batch_size
 
-    mW_xh, mW_hh, mW_hy = np.zeros_like(W_xh), np.zeros_like(W_hh), np.zeros_like(W_hy)
-    mb, mb_prime = np.zeros_like(b), np.zeros_like(b_prime)  # memory variables for Adagrad
+        mW_xh, mW_hh, mW_hy = np.zeros_like(W_xh), np.zeros_like(W_hh), np.zeros_like(W_hy)
+        mb, mb_prime = np.zeros_like(b), np.zeros_like(b_prime)  # memory variables for Adagrad
 
-    while cont:
+        print('Start of epoch {0}'.format(j + 1))
 
-        #next batch
-        input_chars = _input_text[start_index: end_index]
-        target_chars = _input_text[start_index+1:end_index+1]
-        loss = 0
+        while cont:
 
-        for i in range(len(input_chars)):
-            char = input_chars[i]
-            target_char = target_chars[i]
-            x = np.zeros(_vocab_size,)
-            index = _char_index_dict[char]
-            target_index = _char_index_dict[target_char]
-            x[index] = 1
+            #next batch
+            input_chars = _input_text[start_index: end_index]
+            target_chars = _input_text[start_index+1:end_index+1]
+            # print(input_chars, target_chars)
+            loss = 0
+            hidden_prev = np.ones(_hidden_layer_size,)
 
-            #forward pass
-            hidden, y, probs = forward_pass(x, hidden_prev, W_xh, W_hh, W_hy, b, b_prime)
+            d_hprev_Wxh = np.ones(W_xh.shape)
+            d_hprev_Whh = np.ones(W_hh.shape)
+            d_hprev_b = np.ones(b.shape)
 
-            #gradients - back prop
-            dy = cp.deepcopy(probs)
-            dy[target_index] += -1
+            dW_xh = np.zeros(W_xh.shape)
+            dW_hh = np.zeros(W_hh.shape)
+            dW_hy = np.zeros(W_hy.shape)
+            db = np.zeros(b.shape)
+            db_prime = np.zeros(b_prime.shape)
 
-            dW_hy = np.matmul(dy[:, np.newaxis], hidden[:, np.newaxis].T)
-            db_prime = dy
+            print('Starting batch...')
 
-            dh = np.matmul(W_hy.T, dy)
+            for i in range(len(input_chars)):
 
-            d_h_hraw = 1-np.square(hidden)
+                # print('Data point {0}'.format(i))
 
-            dh_raw = np.multiply(dh, d_h_hraw)
+                char = input_chars[i]
+                target_char = target_chars[i]
+                x = np.zeros(_vocab_size,)
+                index = _char_index_dict[char]
+                target_index = _char_index_dict[target_char]
+                x[index] = 1
 
-            #tier1
-            dW_xh += np.matmul(dh_raw[:, np.newaxis], x[:, np.newaxis].T)
-            dW_hh += np.matmul(dh_raw, hidden_prev.T)
-            db += dh_raw
+                #forward pass
+                hidden, y, probs = forward_pass(x, hidden_prev, W_xh, W_hh, W_hy, b, b_prime)
 
-            dh_prev = np.matmul(W_hh.T, dh_raw)
+                #gradients - back prop
+                dy = cp.deepcopy(probs)
+                dy[target_index] += -1
 
-            #tier2
-            dW_xh += np.matmul(np.diag(dh_prev), d_hprev_Wxh)
-            dW_hh += np.matmul(np.diag(dh_prev), d_hprev_Whh)
-            db += np.matmul(np.diag(dh_prev), d_hprev_b)
+                dW_hy += np.matmul(dy[:, np.newaxis], hidden[:, np.newaxis].T)
+                db_prime += dy
+
+                dh = np.matmul(W_hy.T, dy)
+
+                d_h_hraw = 1-np.square(hidden)
+
+                dh_raw = np.multiply(dh, d_h_hraw)
+
+                #tier1
+                dW_xh += np.matmul(dh_raw[:, np.newaxis], x[:, np.newaxis].T)
+                dW_hh += np.matmul(dh_raw, hidden_prev.T)
+                db += dh_raw
+
+                dh_prev = np.matmul(W_hh.T, dh_raw)
+
+                #tier2
+                dW_xh += np.matmul(np.diag(dh_prev), d_hprev_Wxh)
+                dW_hh += np.matmul(np.diag(dh_prev), d_hprev_Whh)
+                db += np.matmul(np.diag(dh_prev), d_hprev_b)
+
+                # print(dh_prev, d_hprev_Wxh, dW_xh)
 
 
-            #save for next iter
-            d_hprev_Wxh = np.matmul(d_h_hraw[:, np.newaxis], x[:, np.newaxis].T)
-            d_hprev_Whh = np.matmul(d_h_hraw[:, np.newaxis], hidden_prev[:, np.newaxis].T)
-            d_hprev_b = d_h_hraw
+                #save for next iter
+                d_hprev_Wxh = np.matmul(d_h_hraw[:, np.newaxis], x[:, np.newaxis].T)
+                d_hprev_Whh = np.matmul(d_h_hraw[:, np.newaxis], hidden_prev[:, np.newaxis].T)
+                d_hprev_b = d_h_hraw
 
-            #update loss
-            loss += -np.log(probs[target_index])
+                #update loss
+                loss += -np.log(probs[target_index])
 
-        #update parameters by adagrad update
-        for param, dparam, mem in zip([W_xh, W_hh, W_hy, b, b_prime],
-                                      [dW_xh, dW_hh, dW_hy, db, db_prime],
-                                      [mW_xh, mW_hh, mW_hy, mb, mb_prime]):
-            mem += dparam * dparam
-            param += -_learning_rate * dparam / np.sqrt(mem + 1e-8)  # adagrad update
+                #update hidden
+                hidden_prev = cp.deepcopy(hidden)
 
-        #print loss for batch
-        print('Loss: {0}'.format(loss))
+            #update parameters by adagrad update
+            for param, dparam, mem in zip([W_xh, W_hh, W_hy, b, b_prime],
+                                          [dW_xh, dW_hh, dW_hy, db, db_prime],
+                                          [mW_xh, mW_hh, mW_hy, mb, mb_prime]):
+                # mem += dparam * dparam
+                # param += -_learning_rate * dparam / np.sqrt(mem + 1e-8)  # adagrad update
+                param += -_learning_rate * dparam
 
-        #see if next batch exists
-        start_index = start_index + _batch_size
-        end_index = end_index + _batch_size
-        if start_index >= len(_input_text):
-            cont = False
-        elif end_index >= len(_input_text):
-            end_index = len(_input_text)-1
+            #print loss for batch
+            print('Loss: {0}'.format(loss))
+            # print(W_xh, W_xh)
+
+            #see if next batch exists
+            start_index = start_index + _batch_size
+            end_index = end_index + _batch_size
+            if start_index >= len(_input_text):
+                cont = False
+            elif end_index >= len(_input_text):
+                end_index = len(_input_text)-1
+
+        print('End of epoch {0}'.format(j+1))
 
     return W_xh, W_hh, W_hy, b, b_prime
 
