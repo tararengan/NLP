@@ -7,6 +7,8 @@ Read sample text,run an RNN and generate text
 import numpy as np
 import argparse
 import copy as cp
+import sys
+import math
 
 
 def read_file_return_text(_input_file):
@@ -22,19 +24,27 @@ def read_file_return_text(_input_file):
     return text, chars
 
 
+def sigmoid(x):
+    return 1 / (1 + math.e ** -x)
+
+def relu(x):
+    return np.maximum(x, 0)
+
+
 def initialize(_vocab_size, _hidden_layer_size):
     """
     :param _vocab_size:
     :param _hidden_layer_size:
     :return:
     """
-    scale_factor = .0000001
-    W_xh = scale_factor*np.ones((_hidden_layer_size, _vocab_size))
-    W_hh = scale_factor*np.ones((_hidden_layer_size, _hidden_layer_size))
-    W_hy = scale_factor*np.ones((_vocab_size, _hidden_layer_size))
+    scale_factor = .009
+    W_xh = scale_factor*np.random.randn(_hidden_layer_size, _vocab_size)
+    W_hh = np.random.randn(_hidden_layer_size, _hidden_layer_size)
+        # np.identity(_hidden_layer_size)
+    W_hy = scale_factor*np.random.randn(_vocab_size, _hidden_layer_size)
 
-    b = np.ones(_hidden_layer_size,)
-    b_prime = np.ones(_vocab_size,)
+    b = np.zeros(_hidden_layer_size,)
+    b_prime = np.zeros(_vocab_size,)
 
     return W_xh, W_hh, W_hy, b, b_prime
 
@@ -54,6 +64,7 @@ def forward_pass(_input, _hidden, _W_xh, _W_hh, _W_hy, _b, _b_prime):
     """
 
     hidden = np.tanh(np.matmul(_W_xh, _input) + np.matmul(_W_hh, _hidden) + _b)
+    # print('Forward pass: hidden prev {0}, hidden {1}'.format(_hidden, hidden))
     y = np.matmul(_W_hy, hidden) + _b_prime
     probs = np.exp(y)/np.sum(np.exp(y))
 
@@ -64,9 +75,11 @@ def sample_from_model(_vocab_size, _index_char_dict, _text_size, **kwargs):
 
 
     first_char_index  = np.random.randint(0, _vocab_size)
+    first_char = _index_char_dict[first_char_index]
+    print('First char: {0}'.format(first_char))
     x = np.zeros(_vocab_size)
     x[first_char_index] = 1
-    gen_text = ''
+    gen_text = first_char
 
     hidden = kwargs['hidden']
     W_xh = kwargs['W_xh']
@@ -78,12 +91,14 @@ def sample_from_model(_vocab_size, _index_char_dict, _text_size, **kwargs):
     for i in range(_text_size):
         hidden, y, probs = forward_pass(x, hidden, W_xh, W_hh,
                              W_hy, b, b_prime)
-        #get random char from probs
-        gen_char_index = np.random.choice(_vocab_size, p = probs)
+        # get random char from probs
+        gen_char_index = np.random.choice(_vocab_size, p=probs)
+        # gen_char_index = np.argmax(probs)
         gen_char = _index_char_dict[gen_char_index]
 
         gen_text = ''.join([gen_text, gen_char])
-
+        x = np.zeros(_vocab_size)
+        x[gen_char_index] = 1
 
     return gen_text
 
@@ -101,7 +116,8 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
 
     W_xh, W_hh, W_hy, b, b_prime = initialize(_vocab_size, _hidden_layer_size)
 
-    epochs = 10
+    epochs = 50
+    mem_factor = 0
     for j in range(epochs):
 
         cont = True
@@ -111,20 +127,28 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
         mW_xh, mW_hh, mW_hy = np.zeros_like(W_xh), np.zeros_like(W_hh), np.zeros_like(W_hy)
         mb, mb_prime = np.zeros_like(b), np.zeros_like(b_prime)  # memory variables for Adagrad
 
-        print('Start of epoch {0}'.format(j + 1))
+        # print('Start of epoch {0}, {1}'.format(j + 1, np.sum(W_xh)))
+        hidden_prev = np.ones(_hidden_layer_size, )
+        d_hprev_Wxh = np.zeros(W_xh.shape)
+        d_hprev_Whh = np.zeros(W_hh.shape)
+        d_hprev_b = np.zeros(b.shape)
 
+        counter = 1
         while cont:
+        # while counter <= 500:
+
+            # hidden_prev *= mem_factor
+            d_hprev_Wxh *= mem_factor
+            d_hprev_Whh *= mem_factor
+            d_hprev_b *= mem_factor
+
+            hidden_prev = np.ones(_hidden_layer_size, )
 
             #next batch
             input_chars = _input_text[start_index: end_index]
-            target_chars = _input_text[start_index+1:end_index+1]
+            target_chars = _input_text[start_index+1: end_index+1]
             # print(input_chars, target_chars)
             loss = 0
-            hidden_prev = np.ones(_hidden_layer_size,)
-
-            d_hprev_Wxh = np.ones(W_xh.shape)
-            d_hprev_Whh = np.ones(W_hh.shape)
-            d_hprev_b = np.ones(b.shape)
 
             dW_xh = np.zeros(W_xh.shape)
             dW_hh = np.zeros(W_hh.shape)
@@ -132,7 +156,7 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
             db = np.zeros(b.shape)
             db_prime = np.zeros(b_prime.shape)
 
-            print('Starting batch...')
+            # print('Starting batch on {0} characters...'.format(len(input_chars)))
 
             for i in range(len(input_chars)):
 
@@ -155,15 +179,15 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
                 dW_hy += np.matmul(dy[:, np.newaxis], hidden[:, np.newaxis].T)
                 db_prime += dy
 
-                dh = np.matmul(W_hy.T, dy)
+                dh = np.matmul(W_hy.T, dy[:, np.newaxis]).reshape(hidden.shape[0],)
 
                 d_h_hraw = 1-np.square(hidden)
 
-                dh_raw = np.multiply(dh, d_h_hraw)
+                dh_raw = np.matmul(np.diag(d_h_hraw), dh).reshape(hidden.shape[0],)
 
                 #tier1
                 dW_xh += np.matmul(dh_raw[:, np.newaxis], x[:, np.newaxis].T)
-                dW_hh += np.matmul(dh_raw, hidden_prev.T)
+                dW_hh += np.matmul(dh_raw[:, np.newaxis], hidden_prev[:, np.newaxis].T)
                 db += dh_raw
 
                 dh_prev = np.matmul(W_hh.T, dh_raw)
@@ -177,15 +201,21 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
 
 
                 #save for next iter
-                d_hprev_Wxh = np.matmul(d_h_hraw[:, np.newaxis], x[:, np.newaxis].T)
-                d_hprev_Whh = np.matmul(d_h_hraw[:, np.newaxis], hidden_prev[:, np.newaxis].T)
-                d_hprev_b = d_h_hraw
+                d_h_Wxh = np.matmul(d_h_hraw[:, np.newaxis], x[:, np.newaxis].T)
+                d_h_Whh = np.matmul(d_h_hraw[:, np.newaxis], hidden_prev[:, np.newaxis].T)
+                d_h_b = d_h_hraw
+                d_hprev_Wxh = d_h_Wxh
+                d_hprev_Whh = d_h_Whh
+                d_hprev_b = d_h_b
 
                 #update loss
                 loss += -np.log(probs[target_index])
 
                 #update hidden
                 hidden_prev = cp.deepcopy(hidden)
+
+            # if loss < 10 and _learning_rate >= .0001:
+            #     _learning_rate *= .9
 
             #update parameters by adagrad update
             for param, dparam, mem in zip([W_xh, W_hh, W_hy, b, b_prime],
@@ -196,16 +226,21 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
                 param += -_learning_rate * dparam
 
             #print loss for batch
+            # if counter % 10 == 0:
             print('Loss: {0}'.format(loss))
             # print(W_xh, W_xh)
+
+            # counter += 1
 
             #see if next batch exists
             start_index = start_index + _batch_size
             end_index = end_index + _batch_size
-            if start_index >= len(_input_text):
+            if start_index >= len(_input_text)-1:
                 cont = False
             elif end_index >= len(_input_text):
                 end_index = len(_input_text)-1
+                if start_index == end_index:
+                    cont = False
 
         print('End of epoch {0}'.format(j+1))
 
@@ -216,6 +251,8 @@ def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
 
     input_text, chars = read_file_return_text(_input_file)
     vocab_size = len(chars)
+
+    print('Vocab size: {0}'.format(len(input_text)))
 
     char_index_dict = {char: i for i, char in enumerate(chars)}
     index_char_dict = {v: k for k, v in char_index_dict.items()}
