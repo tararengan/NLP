@@ -9,6 +9,7 @@ import argparse
 import copy as cp
 import sys
 import math
+from collections import OrderedDict
 
 
 def read_file_return_text(_input_file):
@@ -20,7 +21,8 @@ def read_file_return_text(_input_file):
     with open(_input_file, 'r') as f:
         text = f.read()
 
-    chars = set([char for char in text])
+    chars = list(set([char for char in text]))
+    chars.sort()
     return text, chars
 
 
@@ -37,9 +39,10 @@ def initialize(_vocab_size, _hidden_layer_size):
     :param _hidden_layer_size:
     :return:
     """
-    scale_factor = .009
+    np.random.seed(10)
+    scale_factor = .01
     W_xh = scale_factor*np.random.randn(_hidden_layer_size, _vocab_size)
-    W_hh = np.random.randn(_hidden_layer_size, _hidden_layer_size)
+    W_hh = scale_factor*np.random.randn(_hidden_layer_size, _hidden_layer_size)
         # np.identity(_hidden_layer_size)
     W_hy = scale_factor*np.random.randn(_vocab_size, _hidden_layer_size)
 
@@ -49,7 +52,7 @@ def initialize(_vocab_size, _hidden_layer_size):
     return W_xh, W_hh, W_hy, b, b_prime
 
 
-def forward_pass(_input, _hidden, _W_xh, _W_hh, _W_hy, _b, _b_prime):
+def forward_pass(_input, _hidden_prev, _W_xh, _W_hh, _W_hy, _b, _b_prime):
 
     """
 
@@ -63,7 +66,7 @@ def forward_pass(_input, _hidden, _W_xh, _W_hh, _W_hy, _b, _b_prime):
     :return:
     """
 
-    hidden = np.tanh(np.matmul(_W_xh, _input) + np.matmul(_W_hh, _hidden) + _b)
+    hidden = np.tanh(np.matmul(_W_xh, _input) + np.matmul(_W_hh, _hidden_prev) + _b)
     # print('Forward pass: hidden prev {0}, hidden {1}'.format(_hidden, hidden))
     y = np.matmul(_W_hy, hidden) + _b_prime
     probs = np.exp(y)/np.sum(np.exp(y))
@@ -118,31 +121,25 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
 
     epochs = 50
     mem_factor = 0
+    mW_xh, mW_hh, mW_hy = np.zeros_like(W_xh), np.zeros_like(W_hh), np.zeros_like(W_hy)
+    mb, mb_prime = np.zeros_like(b), np.zeros_like(b_prime)  # memory variables for Adagrad
+
     for j in range(epochs):
 
         cont = True
         start_index = 0
         end_index = start_index+_batch_size
 
-        mW_xh, mW_hh, mW_hy = np.zeros_like(W_xh), np.zeros_like(W_hh), np.zeros_like(W_hy)
-        mb, mb_prime = np.zeros_like(b), np.zeros_like(b_prime)  # memory variables for Adagrad
-
-        # print('Start of epoch {0}, {1}'.format(j + 1, np.sum(W_xh)))
-        hidden_prev = np.ones(_hidden_layer_size, )
-        d_hprev_Wxh = np.zeros(W_xh.shape)
-        d_hprev_Whh = np.zeros(W_hh.shape)
-        d_hprev_b = np.zeros(b.shape)
-
         counter = 1
         while cont:
         # while counter <= 500:
 
             # hidden_prev *= mem_factor
-            d_hprev_Wxh *= mem_factor
-            d_hprev_Whh *= mem_factor
-            d_hprev_b *= mem_factor
+            d_hprev_Wxh = np.zeros(W_xh.shape)
+            d_hprev_Whh = np.zeros(W_hh.shape)
+            d_hprev_b = np.zeros(b.shape)
 
-            hidden_prev = np.ones(_hidden_layer_size, )
+            hidden_prev = np.zeros(_hidden_layer_size, )
 
             #next batch
             input_chars = _input_text[start_index: end_index]
@@ -150,11 +147,11 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
             # print(input_chars, target_chars)
             loss = 0
 
-            dW_xh = np.zeros(W_xh.shape)
-            dW_hh = np.zeros(W_hh.shape)
-            dW_hy = np.zeros(W_hy.shape)
-            db = np.zeros(b.shape)
-            db_prime = np.zeros(b_prime.shape)
+            dW_xh = np.zeros_like(W_xh)
+            dW_hh = np.zeros_like(W_hh)
+            dW_hy = np.zeros_like(W_hy)
+            db = np.zeros_like(b)
+            db_prime = np.zeros_like(b_prime)
 
             # print('Starting batch on {0} characters...'.format(len(input_chars)))
 
@@ -174,7 +171,7 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
 
                 #gradients - back prop
                 dy = cp.deepcopy(probs)
-                dy[target_index] += -1
+                dy[target_index] -= 1
 
                 dW_hy += np.matmul(dy[:, np.newaxis], hidden[:, np.newaxis].T)
                 db_prime += dy
@@ -204,9 +201,9 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
                 d_h_Wxh = np.matmul(d_h_hraw[:, np.newaxis], x[:, np.newaxis].T)
                 d_h_Whh = np.matmul(d_h_hraw[:, np.newaxis], hidden_prev[:, np.newaxis].T)
                 d_h_b = d_h_hraw
-                d_hprev_Wxh = d_h_Wxh
-                d_hprev_Whh = d_h_Whh
-                d_hprev_b = d_h_b
+                d_hprev_Wxh = cp.deepcopy(d_h_Wxh)
+                d_hprev_Whh = cp.deepcopy(d_h_Whh)
+                d_hprev_b = cp.deepcopy(d_h_b)
 
                 #update loss
                 loss += -np.log(probs[target_index])
@@ -217,13 +214,18 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
             # if loss < 10 and _learning_rate >= .0001:
             #     _learning_rate *= .9
 
+            input_indices = [_char_index_dict[char] for char in input_chars]
+
+            for dparam in [dW_xh, dW_hh, dW_hy, db, db_prime]:
+                np.clip(dparam, -5, 5, out=dparam)  # clip to mitigate exploding gradients
+
             #update parameters by adagrad update
             for param, dparam, mem in zip([W_xh, W_hh, W_hy, b, b_prime],
                                           [dW_xh, dW_hh, dW_hy, db, db_prime],
                                           [mW_xh, mW_hh, mW_hy, mb, mb_prime]):
-                # mem += dparam * dparam
-                # param += -_learning_rate * dparam / np.sqrt(mem + 1e-8)  # adagrad update
-                param += -_learning_rate * dparam
+                mem += dparam * dparam
+                param += -_learning_rate * dparam / np.sqrt(mem + 1e-8)  # adagrad update
+                # param += -_learning_rate * dparam
 
             #print loss for batch
             # if counter % 10 == 0:
