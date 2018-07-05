@@ -119,10 +119,12 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
 
     W_xh, W_hh, W_hy, b, b_prime = initialize(_vocab_size, _hidden_layer_size)
 
-    epochs = 50
+    epochs = 2000
     mem_factor = 0
     mW_xh, mW_hh, mW_hy = np.zeros_like(W_xh), np.zeros_like(W_hh), np.zeros_like(W_hy)
     mb, mb_prime = np.zeros_like(b), np.zeros_like(b_prime)  # memory variables for Adagrad
+
+    counter = -1
 
     for j in range(epochs):
 
@@ -130,9 +132,10 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
         start_index = 0
         end_index = start_index+_batch_size
 
-        counter = 1
         while cont:
         # while counter <= 500:
+
+            counter  += 1
 
             # hidden_prev *= mem_factor
             d_hprev_Wxh = np.zeros(W_xh.shape)
@@ -215,6 +218,7 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
             #     _learning_rate *= .9
 
             input_indices = [_char_index_dict[char] for char in input_chars]
+            # print(counter, np.sum(dW_xh), loss)
 
             for dparam in [dW_xh, dW_hh, dW_hy, db, db_prime]:
                 np.clip(dparam, -5, 5, out=dparam)  # clip to mitigate exploding gradients
@@ -229,7 +233,7 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
 
             #print loss for batch
             # if counter % 10 == 0:
-            print('Loss: {0}'.format(loss))
+            # print('Loss: {0}'.format(loss))
             # print(W_xh, W_xh)
 
             # counter += 1
@@ -246,7 +250,7 @@ def train(_input_text, _char_index_dict, _vocab_size, _batch_size, _hidden_layer
 
         print('End of epoch {0}'.format(j+1))
 
-    return W_xh, W_hh, W_hy, b, b_prime
+    return W_xh, W_hh, W_hy, b, b_prime, loss
 
 
 def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
@@ -259,13 +263,14 @@ def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
     char_index_dict = {char: i for i, char in enumerate(chars)}
     index_char_dict = {v: k for k, v in char_index_dict.items()}
 
-    W_xh, W_hh, W_hy, b, b_prime = train(input_text, char_index_dict, vocab_size, _batch_size,
+    W_xh, W_hh, W_hy, b, b_prime, loss = train(input_text, char_index_dict, vocab_size, _batch_size,
                                          _hidden_layer_size, _learning_rate)
 
     args = {'W_xh': W_xh, 'W_hh': W_hh, 'W_hy': W_hy, 'b': b, 'b_prime': b_prime, 'hidden': np.zeros(_hidden_layer_size,)}
 
     sample_text = sample_from_model(vocab_size, index_char_dict, 200, **args)
 
+    print(loss)
     print(sample_text)
 
     pass
