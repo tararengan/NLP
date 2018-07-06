@@ -9,6 +9,7 @@ import argparse
 import copy as cp
 import math
 import time
+import sys
 
 
 def read_file_return_text(_input_file):
@@ -45,8 +46,10 @@ def initialize(_vocab_size, _hidden_layer_size):
         # np.identity(_hidden_layer_size)
     W_hy = scale_factor*np.random.randn(_vocab_size, _hidden_layer_size)
 
-    b = np.zeros(_hidden_layer_size,)
-    b_prime = np.zeros(_vocab_size,)
+    # b = np.zeros(_hidden_layer_size,)
+    b = np.zeros((_hidden_layer_size, 1))
+    # b_prime = np.zeros(_vocab_size,)
+    b_prime = np.zeros((_vocab_size, 1))
 
     return W_xh, W_hh, W_hy, b, b_prime
 
@@ -66,7 +69,6 @@ def forward_pass(_input, _hidden_prev, _W_xh, _W_hh, _W_hy, _b, _b_prime):
     """
 
     hidden = np.tanh(np.matmul(_W_xh, _input) + np.matmul(_W_hh, _hidden_prev) + _b)
-    # print('Forward pass: hidden prev {0}, hidden {1}'.format(_hidden, hidden))
     y = np.matmul(_W_hy, hidden) + _b_prime
     probs = np.exp(y)/np.sum(np.exp(y))
 
@@ -79,8 +81,8 @@ def sample_from_model(_vocab_size, _index_char_dict, _text_size, **kwargs):
     first_char_index  = np.random.randint(0, _vocab_size)
     first_char = _index_char_dict[first_char_index]
     print('First char: {0}'.format(first_char))
-    x = np.zeros(_vocab_size)
-    x[first_char_index] = 1
+    x = np.zeros((_vocab_size, 1))
+    x[first_char_index, 0] = 1
     gen_text = first_char
 
     hidden = kwargs['hidden']
@@ -94,13 +96,12 @@ def sample_from_model(_vocab_size, _index_char_dict, _text_size, **kwargs):
         hidden, y, probs = forward_pass(x, hidden, W_xh, W_hh,
                              W_hy, b, b_prime)
         # get random char from probs
-        gen_char_index = np.random.choice(_vocab_size, p=probs)
-        # gen_char_index = np.argmax(probs)
+        gen_char_index = np.random.choice(_vocab_size, p=probs.reshape(probs.shape[0],))
         gen_char = _index_char_dict[gen_char_index]
 
         gen_text = ''.join([gen_text, gen_char])
-        x = np.zeros(_vocab_size)
-        x[gen_char_index] = 1
+        x = np.zeros((_vocab_size, 1))
+        x[gen_char_index, 0] = 1
 
     return gen_text
 
@@ -118,7 +119,6 @@ def train_and_sample(_input_text, _char_index_dict, _index_char_dict, _vocab_siz
 
     W_xh, W_hh, W_hy, b, b_prime = initialize(_vocab_size, _hidden_layer_size)
 
-    epochs = 500
     mW_xh, mW_hh, mW_hy = np.zeros_like(W_xh), np.zeros_like(W_hh), np.zeros_like(W_hy)
     mb, mb_prime = np.zeros_like(b), np.zeros_like(b_prime)  # memory variables for Adagrad
 
@@ -127,87 +127,78 @@ def train_and_sample(_input_text, _char_index_dict, _index_char_dict, _vocab_siz
 
     start_index = 0
     end_index = start_index+_batch_size
-    hidden_prev = np.zeros(_hidden_layer_size, )
-    reset = True
+    hidden_prev = np.zeros((_hidden_layer_size, 1))
 
     while cont:
 
         starttime = time.time()
 
-        if end_index >= len(_input_text) - 1:
-            start_index = 0
-            end_index = start_index + _batch_size
-            hidden_prev = np.zeros(_hidden_layer_size, )
-            reset = True
-
         #next batch
         counter  += 1
+
+        if (end_index >= len(_input_text) - 1 ) or (counter == 0):
+            start_index, end_index = 0, _batch_size
+            hidden_prev = np.zeros((_hidden_layer_size, 1))
+            d_hprev_Wxh, d_hprev_Whh, d_hprev_b = np.zeros(W_xh.shape), np.zeros(W_hh.shape), np.zeros(b.shape)
+
 
         # spit out text
         if counter % 10 == 0:
             args = {'W_xh': W_xh, 'W_hh': W_hh, 'W_hy': W_hy, 'b': b, 'b_prime': b_prime,
-                    'hidden': np.zeros(_hidden_layer_size, )}
+                    'hidden': np.zeros((_hidden_layer_size, 1))}
             sample_text = sample_from_model(_vocab_size, _index_char_dict, 200, **args)
             print(sample_text)
 
-        if reset:
-            d_hprev_Wxh = np.zeros(W_xh.shape)
-            d_hprev_Whh = np.zeros(W_hh.shape)
-            d_hprev_b = np.zeros(b.shape)
+        input_indices = [_char_index_dict[char] for char in _input_text[start_index: end_index]]
+        target_indices = [_char_index_dict[char] for char in _input_text[start_index+1: end_index+1]]
 
-        input_chars = _input_text[start_index: end_index]
-        target_chars = _input_text[start_index+1: end_index+1]
         loss = 0
 
-        dW_xh = np.zeros_like(W_xh)
-        dW_hh = np.zeros_like(W_hh)
-        dW_hy = np.zeros_like(W_hy)
-        db = np.zeros_like(b)
-        db_prime = np.zeros_like(b_prime)
+        dW_xh, dW_hh, dW_hy = np.zeros_like(W_xh), np.zeros_like(W_hh), np.zeros_like(W_hy)
+        db, db_prime = np.zeros_like(b), np.zeros_like(b_prime)
 
-        for i in range(len(input_chars)):
+        for i in range(len(input_indices)):
 
-            char = input_chars[i]
-            target_char = target_chars[i]
-            x = np.zeros(_vocab_size,)
-            index = _char_index_dict[char]
-            target_index = _char_index_dict[target_char]
-            x[index] = 1
+            # x = np.zeros(_vocab_size,)
+            x = np.zeros((_vocab_size, 1))
+            index = input_indices[i]
+            target_index = target_indices[i]
+            # x[index] = 1
+            x[index, 0] = 1
 
             #forward pass
             hidden, y, probs = forward_pass(x, hidden_prev, W_xh, W_hh, W_hy, b, b_prime)
-            # hs[i] = cp.deepcopy(hidden)
 
             #gradients - back prop
             dy = cp.deepcopy(probs)
-            dy[target_index] -= 1
+            dy[target_index, 0] -= 1
 
-            dW_hy += np.matmul(dy[:, np.newaxis], hidden[:, np.newaxis].T)
+            dW_hy += np.matmul(dy, hidden.T)
             db_prime += dy
 
-            dh = np.matmul(W_hy.T, dy[:, np.newaxis]).reshape(hidden.shape[0],)
+            dh = np.matmul(W_hy.T, dy)
             d_h_hraw = 1-np.square(hidden)
-            dh_raw = np.matmul(np.diag(d_h_hraw), dh).reshape(hidden.shape[0],)
+            dh_raw = np.multiply(d_h_hraw, dh)
 
             #tier1
-            dW_xh += np.matmul(dh_raw[:, np.newaxis], x[:, np.newaxis].T)
-            dW_hh += np.matmul(dh_raw[:, np.newaxis], hidden_prev[:, np.newaxis].T)
+            dW_xh += np.matmul(dh_raw, x.T)
+            dW_hh += np.matmul(dh_raw, hidden_prev.T)
             db += dh_raw
 
             dh_prev = np.matmul(W_hh.T, dh_raw)
 
             #tier2
-            dW_xh += np.matmul(np.diag(dh_prev), d_hprev_Wxh)
-            dW_hh += np.matmul(np.diag(dh_prev), d_hprev_Whh)
-            db += np.matmul(np.diag(dh_prev), d_hprev_b)
+            dW_xh += np.matmul(np.diag(dh_prev.flatten()), d_hprev_Wxh)
+            dW_hh += np.matmul(np.diag(dh_prev.flatten()), d_hprev_Whh)
+            db += np.multiply(dh_prev, d_hprev_b)
 
             #save for next iter
-            d_hprev_Wxh = np.matmul(d_h_hraw[:, np.newaxis], x[:, np.newaxis].T)
-            d_hprev_Whh = np.matmul(d_h_hraw[:, np.newaxis], hidden_prev[:, np.newaxis].T)
+            d_hprev_Wxh = np.matmul(d_h_hraw, x.T)
+            d_hprev_Whh = np.matmul(d_h_hraw, hidden_prev.T)
             d_hprev_b = d_h_hraw
 
             #update loss
-            loss += -np.log(probs[target_index])
+            loss += -np.log(probs[target_index, 0])
 
             #update hidden
             hidden_prev = cp.deepcopy(hidden)
@@ -220,6 +211,9 @@ def train_and_sample(_input_text, _char_index_dict, _index_char_dict, _vocab_siz
         endtime = time.time()
         print('Time: {0}'.format(endtime - starttime))
 
+        if loss < .1:
+            break
+
         #update parameters by adagrad update
         for param, dparam, mem in zip([W_xh, W_hh, W_hy, b, b_prime],
                                       [dW_xh, dW_hh, dW_hy, db, db_prime],
@@ -231,7 +225,6 @@ def train_and_sample(_input_text, _char_index_dict, _index_char_dict, _vocab_siz
         #next batch
         start_index = start_index + _batch_size
         end_index = end_index + _batch_size
-        reset = False
 
 
     return W_xh, W_hh, W_hy, b, b_prime, loss
@@ -250,8 +243,10 @@ def main(_input_file, _batch_size, _hidden_layer_size, _learning_rate):
     W_xh, W_hh, W_hy, b, b_prime, loss = train_and_sample(input_text, char_index_dict, index_char_dict, vocab_size, _batch_size,
                                          _hidden_layer_size, _learning_rate)
 
-    args = {'W_xh': W_xh, 'W_hh': W_hh, 'W_hy': W_hy, 'b': b, 'b_prime': b_prime, 'hidden': np.zeros(_hidden_layer_size,)}
-    sample_text = sample_from_model(vocab_size, index_char_dict, 200, **args)
+    args = {'W_xh': W_xh, 'W_hh': W_hh, 'W_hy': W_hy, 'b': b, 'b_prime': b_prime,
+            'hidden': np.zeros((_hidden_layer_size, 1))}
+
+    sample_text = sample_from_model(vocab_size, index_char_dict, 300, **args)
     print(sample_text)
 
     pass
